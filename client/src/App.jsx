@@ -78,11 +78,7 @@ const App = () => {
                     &copy; {new Date().getFullYear()} BIT- EventConnect. All rights reserved.
                   </p>
                 </div>
-                <div className="flex space-x-6">
-                  {/* <a href="#" className="text-gray-500 hover:text-gray-700">Privacy Policy</a>
-                  <a href="#" className="text-gray-500 hover:text-gray-700">Terms of Service</a>
-                  <a href="#" className="text-gray-500 hover:text-gray-700">Contact Us</a> */}
-                </div>
+  
               </div>
             </div>
           </footer>

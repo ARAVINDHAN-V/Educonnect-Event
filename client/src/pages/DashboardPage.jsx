@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useContext } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
-import { AuthContext } from '../context/AuthContext'; // Import AuthContext
+import { AuthContext } from '../context/AuthContext';
 import { PlusIcon, CalendarIcon, UsersIcon, CreditCardIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
 
 const DashboardPage = () => {
-  const { user, token, isAuthenticated } = useContext(AuthContext); // Use AuthContext
+  const { user, token, isAuthenticated } = useContext(AuthContext);
   const [events, setEvents] = useState([]);
   const [stats, setStats] = useState({
     totalEvents: 0,
@@ -23,32 +23,97 @@ const DashboardPage = () => {
           throw new Error('No authentication token found');
         }
 
-        // Fetch events with authorization
+        // Fetch events with proper API path and authorization
         const eventsResponse = await axios.get('/api/events', {
           headers: { Authorization: `Bearer ${token}` }
         });
 
-        // Filter events by department
-        const departmentEvents = eventsResponse.data.filter(
-          event => event.department === user.department
-        );
+        // Check if events is an array
+        if (!Array.isArray(eventsResponse.data)) {
+          throw new Error('Unexpected data format from API');
+        }
 
-        // Calculate stats
+        // Filter events by department if user has a department and is not admin
+        const departmentEvents = user?.role === 'admin' 
+          ? eventsResponse.data 
+          : user?.department
+            ? eventsResponse.data.filter(event => 
+                event.department === user.department || 
+                event.createdBy === user?.id)
+            : eventsResponse.data.filter(event => event.createdBy === user?.id);
+
+        // Calculate current date for upcoming events calculation
+        const currentDate = new Date();
+        
+        // Calculate upcoming events
         const upcomingEvents = departmentEvents.filter(
-          event => new Date(event.date) > new Date()
+          event => new Date(event.date) > currentDate
         );
 
-        const totalRegistrations = departmentEvents.reduce(
-          (total, event) => total + (event.registrationsCount || 0), 
-          0
-        );
+        // Fetch registrations for each event to get accurate counts
+        let totalRegistrations = 0;
+        let totalRevenue = 0;
 
-        const totalRevenue = departmentEvents.reduce(
-          (total, event) => total + ((event.registrationsCount || 0) * (event.registrationFee || 0)), 
-          0
-        );
+        // Enhanced event data with registration counts
+        const enhancedEvents = await Promise.all(departmentEvents.map(async (event) => {
+          try {
+            // Only fetch registrations if user is creator or admin
+            if (event.createdBy === user?.id || user?.role === 'admin') {
+              const registrationsResponse = await axios.get(`/api/events/${event._id}/registrations`, {
+                headers: { Authorization: `Bearer ${token}` }
+              });
+              
+              const registrationsCount = registrationsResponse.data.length;
+              totalRegistrations += registrationsCount;
+              
+              // Calculate revenue (registration fee * count)
+              const eventRevenue = registrationsCount * (event.price || 0);
+              totalRevenue += eventRevenue;
+              
+              return {
+                ...event,
+                registrationsCount,
+                revenue: eventRevenue
+              };
+            } else {
+              return {
+                ...event,
+                registrationsCount: 0,
+                revenue: 0
+              };
+            }
+          } catch (error) {
+            console.error(`Error fetching registrations for event ${event._id}:`, error);
+            return {
+              ...event,
+              registrationsCount: 0,
+              revenue: 0
+            };
+          }
+        }));
 
-        setEvents(departmentEvents);
+        // Sort events by date (upcoming first, then most recent completed)
+        const sortedEvents = enhancedEvents.sort((a, b) => {
+          const dateA = new Date(a.date);
+          const dateB = new Date(b.date);
+          
+          // First separate upcoming and past events
+          const aIsPast = dateA < currentDate;
+          const bIsPast = dateB < currentDate;
+          
+          if (aIsPast && !bIsPast) return 1;  // b comes first (upcoming)
+          if (!aIsPast && bIsPast) return -1; // a comes first (upcoming)
+          
+          // For upcoming events, sort by soonest
+          if (!aIsPast && !bIsPast) {
+            return dateA - dateB;
+          }
+          
+          // For past events, sort by most recent
+          return dateB - dateA;
+        });
+
+        setEvents(sortedEvents);
         setStats({
           totalEvents: departmentEvents.length,
           upcomingEvents: upcomingEvents.length,
@@ -68,6 +133,36 @@ const DashboardPage = () => {
       fetchDashboardData();
     }
   }, [token, user, isAuthenticated]);
+
+  const handleDeleteEvent = async (eventId) => {
+    if (!window.confirm('Are you sure you want to delete this event? This action cannot be undone.')) {
+      return;
+    }
+    
+    try {
+      await axios.delete(`/api/events/${eventId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      // Remove event from state after successful deletion
+      setEvents(events.filter(event => event._id !== eventId));
+      
+      // Update stats
+      const deletedEvent = events.find(event => event._id === eventId);
+      const isUpcoming = new Date(deletedEvent.date) > new Date();
+      
+      setStats(prevStats => ({
+        totalEvents: prevStats.totalEvents - 1,
+        upcomingEvents: isUpcoming ? prevStats.upcomingEvents - 1 : prevStats.upcomingEvents,
+        totalRegistrations: prevStats.totalRegistrations - (deletedEvent.registrationsCount || 0),
+        totalRevenue: prevStats.totalRevenue - (deletedEvent.revenue || 0)
+      }));
+      
+    } catch (error) {
+      console.error('Error deleting event:', error);
+      alert(`Failed to delete event: ${error.response?.data?.message || error.message}`);
+    }
+  };
 
   if (loading) {
     return (
@@ -98,7 +193,9 @@ const DashboardPage = () => {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900">Welcome, {user?.name}</h1>
-        <p className="mt-1 text-sm text-gray-600">{user?.department} Department Dashboard</p>
+        <p className="mt-1 text-sm text-gray-600">
+          {user?.department} Department • {user?.role.charAt(0).toUpperCase() + user?.role.slice(1)}
+        </p>
       </div>
 
       {/* Stats Cards */}
@@ -240,59 +337,51 @@ const DashboardPage = () => {
                       <div className="text-sm text-gray-500">{event.time}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{event.registrationsCount || 0}</div>
-                      <div className="text-sm text-gray-500">
-                        {event.capacity ? 
-                          `${((event.registrationsCount || 0) / event.capacity * 100).toFixed(1)}% capacity` : 
-                          'N/A'
-                        }
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        ₹{((event.registrationsCount || 0) * (event.registrationFee || 0)).toLocaleString()}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        new Date(event.date) > new Date() 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-gray-100 text-gray-800'
-                      }`}>
-                        {new Date(event.date) > new Date() ? 'Upcoming' : 'Completed'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <Link to={`/events/${event._id}`} className="text-indigo-600 hover:text-indigo-900 mr-4">
-                        View
-                      </Link>
-                      <Link to={`/events/${event._id}/edit`} className="text-indigo-600 hover:text-indigo-900 mr-4">
-                        Edit
-                      </Link>
-                      <Link to={`/events/${event._id}/registrations`} className="text-indigo-600 hover:text-indigo-900">
-                        Registrations
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
+  <div className="text-sm text-gray-900">{event.registrationsCount || 0}</div>
+  <div className="text-sm text-gray-500">
+    {event.capacity ? 
+      `${((event.registrationsCount || 0) / event.capacity * 100).toFixed(0)}% capacity` : 
+      'No capacity set'}
+  </div>
+</td>
+<td className="px-6 py-4 whitespace-nowrap">
+  <div className="text-sm text-gray-900">₹{(event.revenue || 0).toLocaleString()}</div>
+  <div className="text-sm text-gray-500">{event.price ? `₹${event.price} per person` : 'Free'}</div>
+</td>
+<td className="px-6 py-4 whitespace-nowrap">
+  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+    ${new Date(event.date) > new Date() 
+      ? 'bg-green-100 text-green-800' 
+      : 'bg-gray-100 text-gray-800'}`}>
+    {new Date(event.date) > new Date() ? 'Upcoming' : 'Completed'}
+  </span>
+</td>
+<td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+  <div className="flex justify-end space-x-2">
+    <Link to={`/events/${event._id}`} className="text-indigo-600 hover:text-indigo-900">
+      View
+    </Link>
+    <Link to={`/events/${event._id}/edit`} className="text-blue-600 hover:text-blue-900">
+      Edit
+    </Link>
+    <button
+      onClick={() => handleDeleteEvent(event._id)}
+      className="text-red-600 hover:text-red-900"
+    >
+      Delete
+    </button>
+  </div>
+</td>
+</tr>
+))}
+</tbody>
             </table>
           ) : (
-            <div className="text-center py-12">
-              <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
-              </svg>
-              <h3 className="mt-2 text-sm font-medium text-gray-900">No events yet</h3>
-              <p className="mt-1 text-sm text-gray-500">Get started by creating a new event.</p>
-              <div className="mt-6">
-                <Link
-                  to="/events/create"
-                  className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                >
-                  <PlusIcon className="-ml-1 mr-2 h-5 w-5" />
-                  Create Event
-                </Link>
-              </div>
+            <div className="text-center py-8">
+              <p className="text-gray-500">No events found</p>
+              <Link to="/events/create" className="mt-4 inline-block text-indigo-600 hover:text-indigo-800">
+                Create your first event
+              </Link>
             </div>
           )}
         </div>
