@@ -1,13 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useContext } from 'react';
+import { useNavigate, useParams, Link } from 'react-router-dom';
+import { AuthContext } from '../context/AuthContext';
 
 const EditEventPage = () => {
-  const { id } = useParams();
+  const { id } = useParams() || {};  // ✅ Prevents error if id is undefined
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  
+  const { user } = useContext(AuthContext);
+
+  console.log("ID:", id);
+
+
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -18,22 +23,21 @@ const EditEventPage = () => {
     imageUrl: '',
   });
 
+  const [selectedImageOption, setSelectedImageOption] = useState('upload'); // 'upload' or 'url'
+  const [previewImage, setPreviewImage] = useState('');
+
+  // Fetch event data on mount
   useEffect(() => {
     const fetchEvent = async () => {
       try {
-        // Replace with your actual API endpoint
         const response = await fetch(`/api/events/${id}`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch event');
-        }
-        
+        if (!response.ok) throw new Error('Failed to fetch event');
         const eventData = await response.json();
-        
-        // Format the date for the date input (YYYY-MM-DD)
-        const formattedDate = eventData.date 
-          ? new Date(eventData.date).toISOString().split('T')[0] 
+
+        const formattedDate = eventData.date
+          ? new Date(eventData.date).toISOString().split('T')[0]
           : '';
-        
+
         setFormData({
           title: eventData.title || '',
           description: eventData.description || '',
@@ -43,7 +47,7 @@ const EditEventPage = () => {
           price: eventData.price !== undefined ? eventData.price.toString() : '',
           imageUrl: eventData.imageUrl || '',
         });
-        
+
         setLoading(false);
       } catch (err) {
         setError(err.message);
@@ -54,47 +58,107 @@ const EditEventPage = () => {
     fetchEvent();
   }, [id]);
 
+  // Preview image logic
+  useEffect(() => {
+    if (formData.imageUrl instanceof File) {
+      const fileURL = URL.createObjectURL(formData.imageUrl);
+      setPreviewImage(fileURL);
+      return () => URL.revokeObjectURL(fileURL);
+    } else if (typeof formData.imageUrl === 'string') {
+      setPreviewImage(formData.imageUrl);
+    }
+  }, [formData.imageUrl]);
+
+  // ✅ Your requested console log
+  useEffect(() => {
+    console.log('Preview Image is now:', previewImage);
+  }, [previewImage]);
+
+  // Handle text inputs
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData({
-      ...formData,
+    setFormData((prev) => ({
+      ...prev,
       [name]: value,
-    });
+    }));
   };
 
+  // Handle image file selection
+  const handleImageFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setFormData((prev) => ({
+        ...prev,
+        imageUrl: file,
+      }));
+    }
+  };
+
+  // Handle image URL change
+  const handleImageUrlChange = (e) => {
+    const url = e.target.value;
+    setFormData((prev) => ({
+      ...prev,
+      imageUrl: url,
+    }));
+  };
+
+  // Handle form submit
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
-    setError(null);
-
+  
     try {
-      // Format the data as needed
-      const eventData = {
-        ...formData,
-        price: formData.price ? parseFloat(formData.price) : 0,
-      };
-
-      // Replace with your actual API endpoint
-      const response = await fetch(`/api/events/${id}`, {
+      const formDataToSend = new FormData();
+      formDataToSend.append('title', formData.title);
+      formDataToSend.append('description', formData.description);
+      formDataToSend.append('date', formData.date);
+      formDataToSend.append('location', formData.location);
+  
+      if (selectedImageOption === 'upload' && formData.imageUrl instanceof File) {
+        formDataToSend.append('image', formData.imageUrl);
+      } else if (selectedImageOption === 'url' && typeof formData.imageUrl === 'string') {
+        formDataToSend.append('imageUrl', formData.imageUrl);
+      }
+  
+      const res = await fetch(`/api/events/${id}`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
+          Authorization: `Bearer ${user.token}`,
         },
-        body: JSON.stringify(eventData),
+        body: formDataToSend,
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to update event');
+  
+      // ✅ Add safe JSON parsing here
+      let data;
+      try {
+        if (res.headers.get('content-type')?.includes('application/json')) {
+          data = await res.json();
+        } else {
+          const text = await res.text();
+          throw new Error(text || 'Server returned no response');
+        }
+      } catch (err) {
+        console.error('Failed to parse JSON:', err);
+        throw new Error('Server response not in JSON format');
       }
-
+  
+      if (!res.ok) {
+        throw new Error(data.message || 'Failed to update event');
+      }
+  
+      // Redirect or update UI
       navigate(`/events/${id}`);
     } catch (err) {
+      console.error('Update error:', err.message);
       setError(err.message);
+    } finally {
       setSaving(false);
     }
   };
 
-  if (loading) return <div className="flex justify-center p-8">Loading event...</div>;
+
+  if (loading) return <div className="p-4 text-center">Loading event...</div>;
   if (error && !saving) return <div className="text-red-500 p-4">Error: {error}</div>;
 
   return (
@@ -115,20 +179,8 @@ const EditEventPage = () => {
         )}
 
         <form onSubmit={handleSubmit}>
-          <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="title">
-              Event Title*
-            </label>
-            <input
-              id="title"
-              name="title"
-              type="text"
-              value={formData.title}
-              onChange={handleChange}
-              required
-              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-            />
-          </div>
+        
+
 
           <div className="mb-4">
             <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="description">
@@ -190,7 +242,7 @@ const EditEventPage = () => {
 
           <div className="mb-4">
             <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="price">
-              Price ($)
+              Price (₹)
             </label>
             <input
               id="price"
@@ -205,18 +257,68 @@ const EditEventPage = () => {
           </div>
 
           <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="imageUrl">
-              Image URL
-            </label>
-            <input
-              id="imageUrl"
-              name="imageUrl"
-              type="text"
-              value={formData.imageUrl}
-              onChange={handleChange}
-              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-            />
-          </div>
+        <label className="block text-gray-700 text-sm font-bold mb-2">Image Upload</label>
+        <div className="flex space-x-4 mb-2">
+          <button
+            type="button"
+            className={`py-1 px-3 rounded border ${selectedImageOption === 'upload' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700'}`}
+            onClick={() => setSelectedImageOption('upload')}
+          >
+            Upload from Device
+          </button>
+          <button
+            type="button"
+            className={`py-1 px-3 rounded border ${selectedImageOption === 'url' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700'}`}
+            onClick={() => setSelectedImageOption('url')}
+          >
+            Paste Image Link
+          </button>
+        </div>
+
+        {selectedImageOption === 'upload' && (
+          <input
+            type="file"
+            accept="image/*"
+            className="mt-2"
+            onChange={(e) => {
+              const file = e.target.files[0];
+              if (file) {
+                setFormData((prev) => ({
+                  ...prev,
+                  imageUrl: file,
+                }));
+              }
+            }}
+          />
+        )}
+
+        {selectedImageOption === 'url' && (
+          <input
+            type="text"
+            placeholder="Paste image URL"
+            className="mt-2 shadow appearance-none border rounded w-full py-2 px-3 text-gray-700"
+            value={typeof formData.imageUrl === 'string' ? formData.imageUrl : ''}
+            onChange={(e) => {
+              setFormData((prev) => ({
+                ...prev,
+                imageUrl: e.target.value,
+              }));
+            }}
+          />
+        )}
+
+{previewImage && (
+  <div className="mt-2">
+    <p className="text-sm font-medium">Current Selected Image:</p>
+    <img
+      src={previewImage}
+      alt="Selected Preview"
+      className="mt-1 max-h-40 rounded-lg border p-1 object-contain"
+    />
+  </div>
+)}
+
+      </div>
 
           <div className="flex items-center justify-between mt-6">
             <button

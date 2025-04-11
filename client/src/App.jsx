@@ -13,12 +13,12 @@ import EventConfirmationPage from "./pages/EventConfirmationPage";
 import CreateEventPage from "./pages/CreateEventPage";
 import EditEventPage from "./pages/EditEventPage";
 import EventRegistrationsPage from "./pages/EventRegistrationsPage";
-import BrochureUploadPage from "./pages/BrochureUploadPage";
-import BrochuresPage from "./pages/BrochuresPage";
 import PaymentsPage from "./pages/PaymentsPage";
 import ProfilePage from "./pages/ProfilePage";
 import SettingsPage from "./pages/SettingsPage";
 import NotFoundPage from "./pages/NotFoundPage";
+import { NotificationProvider } from './context/NotificationContext';
+import EditProfilePage from './pages/EditProfilePage';
 
 // ✅ Use AuthContext for authentication state
 const ProtectedRoute = ({ children }) => {
@@ -38,6 +38,7 @@ const ProtectedRoute = ({ children }) => {
 const App = () => {
   return (
     <AuthProvider> {/* ✅ Wrap the app with AuthProvider */}
+    <NotificationProvider>
       <Router>
         <div className="flex flex-col min-h-screen">
           <NavBar />
@@ -51,18 +52,17 @@ const App = () => {
               <Route path="/events/:id/confirmation" element={<EventConfirmationPage />} />
               <Route path="/events" element={<EventsPage />} />
               <Route path="/events/:id" element={<EventDetailPage />} />
-
+              
               {/* Protected Routes */}
               <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
               <Route path="/events/create" element={<ProtectedRoute><CreateEventPage /></ProtectedRoute>} />
               <Route path="/events/:id/edit" element={<ProtectedRoute><EditEventPage /></ProtectedRoute>} />
               <Route path="/events/:id/registrations" element={<ProtectedRoute><EventRegistrationsPage /></ProtectedRoute>} />
               <Route path="/my-events" element={<ProtectedRoute><EventsPage userEvents={true} /></ProtectedRoute>} />
-              <Route path="/brochures/upload" element={<ProtectedRoute><BrochureUploadPage /></ProtectedRoute>} />
-              <Route path="/brochures" element={<ProtectedRoute><BrochuresPage /></ProtectedRoute>} />
               <Route path="/payments" element={<ProtectedRoute><PaymentsPage /></ProtectedRoute>} />
               <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+              <Route path="/edit-profile" element={<ProtectedRoute><EditProfilePage /></ProtectedRoute>} />
 
               {/* 404 Route */}
               <Route path="*" element={<NotFoundPage />} />
@@ -84,6 +84,7 @@ const App = () => {
           </footer>
         </div>
       </Router>
+      </NotificationProvider>
     </AuthProvider>
   );
 };

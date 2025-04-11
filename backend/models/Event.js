@@ -20,21 +20,22 @@ const EventSchema = new mongoose.Schema({
   location: {
     type: String
   },
-  price: {
+  fee: {
     type: Number,
-    default: 0
+    required: true
+  },
+  maxRegistrations: {
+    type: Number,
+    default: 50
   },
   imageUrl: {
-    type: String
+    type: String,
+    default: ''
   },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
   }
 });
 

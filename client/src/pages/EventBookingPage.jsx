@@ -1,244 +1,253 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import React, { useState, useEffect, useContext } from 'react';
+import axios from '../api/axios';
+import { useParams, useNavigate } from 'react-router-dom';
+import { useNotification } from '../context/NotificationContext';
+import { useAuth } from '../context/AuthContext';
+
+
+const departments = [
+  'Computer Science', 'Information Technology', 'Electronics & Communication',
+  'Information Science and Engineering', 'Electrical Engineering', 'Mechanical Engineering',
+  'Civil Engineering', 'Chemical Engineering', 'Biotechnology', 'Physics', 'Chemistry',
+  'Mathematics', 'Management Studies', 'Humanities & Social Sciences', 'Student Affairs', 'Agriculture'
+];
 
 const EventBookingPage = () => {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const { id } = useParams();
   const navigate = useNavigate();
+  const { showNotification } = useNotification();
+
   const [event, setEvent] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [isLastMinutePass, setIsLastMinutePass] = useState(false);
+  const { user, token } = useAuth(); // ✅ get token directly
+
+
+
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    ticketType: 'Standard',
-    specialRequirements: '',
-    agreeToTerms: false
+    teamName: '',
+    teamMemberCount: 2,
+    members: Array(4).fill(null).map(() => ({
+      name: '', college: '', study: '', department: '', email: '', phone: ''
+    })),
+    paperTitle: '',
+    abstract: '',
+    paymentProof: null
   });
-  const [submitStatus, setSubmitStatus] = useState({ loading: false, error: null, success: false });
 
-  // Fetch event details when component mounts
   useEffect(() => {
-    const fetchEventDetails = async () => {
-      try {
-        const response = await fetch(`/api/events/${id}`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch event details');
-        }
-        const data = await response.json();
-        setEvent(data);
-        
-        // Attempt to prefill user data if they're logged in
-        const token = localStorage.getItem('userToken');
-        if (token) {
-          try {
-            const userResponse = await fetch('/api/users', {
-              headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-              }
-            });
-            
-            if (userResponse.ok) {
-              const userData = await userResponse.json();
-              setFormData(prev => ({
-                ...prev,
-                name: userData.name || '',
-                email: userData.email || ''
-              }));
-            }
-          } catch (err) {
-            console.error('Error fetching user data:', err);
-            // Continue without user data
-          }
-        }
-        
-        setLoading(false);
-      } catch (err) {
-        setError(err.message);
-        setLoading(false);
-      }
+    const fetchEvent = async () => {
+      const res = await axios.get(`/api/events/${id}`);
+      setEvent(res.data);
     };
-
-    fetchEventDetails();
+    fetchEvent();
   }, [id]);
 
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData({
-      ...formData,
-      [name]: type === 'checkbox' ? checked : value
-    });
+  useEffect(() => {
+    const checkRegistrationCount = async () => {
+      try {
+        const res = await axios.get(`/api/events/${id}/registration-count`);
+        if (res.data.count >= event?.maxRegistrations) {
+          setIsLastMinutePass(true);
+        }
+      } catch (err) {
+        console.error('Error checking registration count:', err.message);
+      }
+    };
+    if (event) checkRegistrationCount();
+  }, [event]);
+
+  const handleChange = (e, memberIndex, field) => {
+    if (field !== undefined) {
+      const updated = [...formData.members];
+      updated[memberIndex][field] = e.target.value;
+      setFormData({ ...formData, members: updated });
+    } else {
+      const { name, value } = e.target;
+      setFormData({ ...formData, [name]: value });
+    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setSubmitStatus({ loading: true, error: null, success: false });
-
+  
+    const filledMembers = formData.members.filter(member => member.name.trim() !== '');
+    const teamMemberCount = filledMembers.length;
+  
+    if (teamMemberCount < 2 || !formData.teamName || !formData.paperTitle || !formData.abstract || !formData.paymentProof) {
+      return alert('❌ Please fill all required fields and have at least 2 team members.');
+    }
+  
+    if (teamMemberCount > 4) {
+      return alert('❌ Team size cannot exceed 4 members.');
+    }
+  
+    const totalFees = isLastMinutePass
+      ? Math.round(event.fee * 1.75 * teamMemberCount)
+      : event.fee * teamMemberCount;
+  
+    const data = new FormData();
+    data.append('teamName', formData.teamName);
+    data.append('teamMemberCount', teamMemberCount.toString());
+    data.append('paperTitle', formData.paperTitle);
+    data.append('abstract', formData.abstract);
+    data.append('isLastMinutePass', isLastMinutePass);
+    data.append('paymentProof', formData.paymentProof);
+    data.append('totalFees', totalFees);
+    data.append('members', JSON.stringify(filledMembers));
+  
     try {
-      const token = localStorage.getItem('userToken');
-      if (!token) {
-        throw new Error('You must be logged in to register for an event');
-      }
-
-      const response = await fetch(`/api/events/${id}/registrations`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          ticketType: formData.ticketType,
-          specialRequirements: formData.specialRequirements
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to register for this event');
-      }
-
-      // Registration successful
-      setSubmitStatus({ loading: false, error: null, success: true });
-      
-      // Redirect after short delay
+      setLoading(true);
+  
+      const token = user?.token;
+      console.log("🔐 Logged-in user:", user);
+      console.log("🧾 Token:", token);
+      console.log("🛠️ URL:", `/api/registrations/events/${event._id}/registrations`);
+  
+      const response = await axios.post(
+        `/api/registrations/events/${event._id}/registrations`,
+        data,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+  
+      console.log('✅ Registration Success:', response.data);
+  
+      showNotification('✅ Registration successful! Redirecting...');
       setTimeout(() => {
-        navigate(`/events/${id}/confirmation`);
-      }, 2000);
-      
+        navigate('/my-events');
+      }, 6000);
     } catch (err) {
-      setSubmitStatus({ loading: false, error: err.message, success: false });
+      console.error('❌ Registration Error:', err.response?.data || err.message);
+      setError('Registration failed. Please try again.');
+      showNotification('❌ Registration failed. Try again.');
+    } finally {
+      setLoading(false);
     }
   };
+  
+  
+  
 
   if (loading) return <div className="flex justify-center p-8">Loading event details...</div>;
   if (error) return <div className="text-red-500 p-4">Error: {error}</div>;
   if (!event) return <div className="p-4">Event not found</div>;
 
   return (
-    <div className="container mx-auto p-4">
-      <div className="mb-6">
-        <Link to={`/events/${id}`} className="text-blue-500 hover:text-blue-600">
-          &larr; Back to Event Details
-        </Link>
-      </div>
-
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
-        <div className="p-6">
-          <h1 className="text-2xl font-bold mb-6">Register for Event: {event.title}</h1>
-          
-          <div className="mb-6">
-            <div className="bg-blue-50 p-4 rounded mb-6">
-              <h2 className="text-lg font-semibold mb-2">Event Information</h2>
-              <p><span className="font-medium">Date:</span> {new Date(event.date).toLocaleDateString()}</p>
-              <p><span className="font-medium">Time:</span> {event.time || 'Not specified'}</p>
-              <p><span className="font-medium">Location:</span> {event.location || 'Not specified'}</p>
-              {event.price !== undefined && (
-                <p><span className="font-medium">Price:</span> ${event.price.toFixed(2)}</p>
-              )}
-            </div>
-            
-            {submitStatus.success ? (
-              <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative mb-4">
-                <strong className="font-bold">Success!</strong>
-                <span className="block sm:inline"> Your registration was successful. Redirecting to confirmation page...</span>
-              </div>
-            ) : (
-              <form onSubmit={handleSubmit}>
-                {submitStatus.error && (
-                  <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4">
-                    <strong className="font-bold">Error!</strong>
-                    <span className="block sm:inline"> {submitStatus.error}</span>
-                  </div>
-                )}
-                
-                <div className="mb-4">
-                  <label htmlFor="name" className="block text-gray-700 font-medium mb-2">
-                    Your Name
-                  </label>
-                  <input
-                    type="text"
-                    id="name"
-                    name="name"
-                    value={formData.name}
-                    onChange={handleChange}
-                    className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                    required
-                  />
-                </div>
-                
-                <div className="mb-4">
-                  <label htmlFor="email" className="block text-gray-700 font-medium mb-2">
-                    Email Address
-                  </label>
-                  <input
-                    type="email"
-                    id="email"
-                    name="email"
-                    value={formData.email}
-                    onChange={handleChange}
-                    className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                    required
-                  />
-                </div>
-                
-                <div className="mb-4">
-                  <label htmlFor="ticketType" className="block text-gray-700 font-medium mb-2">
-                    Ticket Type
-                  </label>
-                  <select
-                    id="ticketType"
-                    name="ticketType"
-                    value={formData.ticketType}
-                    onChange={handleChange}
-                    className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                  >
-                    <option value="Standard">Standard</option>
-                    <option value="VIP">VIP</option>
-                    <option value="Early Bird">Early Bird</option>
-                  </select>
-                </div>
-                
-                <div className="mb-4">
-                  <label htmlFor="specialRequirements" className="block text-gray-700 font-medium mb-2">
-                    Special Requirements (optional)
-                  </label>
-                  <textarea
-                    id="specialRequirements"
-                    name="specialRequirements"
-                    value={formData.specialRequirements}
-                    onChange={handleChange}
-                    className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline h-32"
-                  ></textarea>
-                </div>
-                
-                <div className="mb-6">
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      name="agreeToTerms"
-                      checked={formData.agreeToTerms}
-                      onChange={handleChange}
-                      className="mr-2"
-                      required
-                    />
-                    <span className="text-gray-700">
-                      I agree to the terms and conditions for this event
-                    </span>
-                  </label>
-                </div>
-                
-                <button
-                  type="submit"
-                  className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full"
-                  disabled={submitStatus.loading}
-                >
-                  {submitStatus.loading ? 'Processing...' : 'Complete Registration'}
-                </button>
-              </form>
-            )}
-          </div>
+    <div className="max-w-4xl mx-auto p-6 bg-white rounded-lg shadow-lg mt-6">
+      <h2 className="text-2xl font-bold mb-4 text-center">Register for Event: {event.title}</h2>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <input
+            name="teamName"
+            placeholder="Team Name *"
+            required
+            className="w-full border border-gray-300 rounded-md p-2"
+            value={formData.teamName}
+            onChange={handleChange}
+          />
+          <input
+            type="number"
+            name="teamMemberCount"
+            min="1"
+            max="4"
+            required
+            placeholder="Team Member Count *"
+            className="w-full border border-gray-300 rounded-md p-2"
+            value={formData.teamMemberCount}
+            onChange={handleChange}
+          />
         </div>
-      </div>
+
+        {[...Array(4)].map((_, index) => (
+          <div key={index} className="border p-4 rounded-md bg-gray-50 space-y-2">
+            <h4 className="font-semibold">Team Member {index + 1} (optional)</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <input
+                placeholder="Name"
+                className="w-full border border-gray-300 rounded-md p-2"
+                value={formData.members[index].name}
+                onChange={(e) => handleChange(e, index, 'name')}
+              />
+              <input
+                placeholder="College"
+                className="w-full border border-gray-300 rounded-md p-2"
+                value={formData.members[index].college}
+                onChange={(e) => handleChange(e, index, 'college')}
+              />
+              <input
+                placeholder="UG/PG"
+                className="w-full border border-gray-300 rounded-md p-2"
+                value={formData.members[index].study}
+                onChange={(e) => handleChange(e, index, 'study')}
+              />
+              <select
+                className="w-full border border-gray-300 rounded-md p-2"
+                value={formData.members[index].department}
+                onChange={(e) => handleChange(e, index, 'department')}
+              >
+                <option value="">Select Department</option>
+                {departments.map((dept) => (
+                  <option key={dept}>{dept}</option>
+                ))}
+              </select>
+              <input
+                placeholder="Email"
+                className="w-full border border-gray-300 rounded-md p-2"
+                value={formData.members[index].email}
+                onChange={(e) => handleChange(e, index, 'email')}
+              />
+              <input
+                placeholder="Phone Number"
+                className="w-full border border-gray-300 rounded-md p-2"
+                value={formData.members[index].phone}
+                onChange={(e) => handleChange(e, index, 'phone')}
+              />
+            </div>
+          </div>
+        ))}
+
+        <input
+          name="paperTitle"
+          placeholder="Paper Title *"
+          required
+          className="w-full border border-gray-300 rounded-md p-2"
+          value={formData.paperTitle}
+          onChange={handleChange}
+        />
+        <textarea
+          name="abstract"
+          placeholder="Abstract *"
+          required
+          className="w-full border border-gray-300 rounded-md p-2"
+          rows="4"
+          value={formData.abstract}
+          onChange={handleChange}
+        ></textarea>
+        <div className="bg-gray-100 p-2 rounded-md">
+        <input
+  type="file"
+  accept="image/*"
+  onChange={(e) => setFormData({ ...formData, paymentProof: e.target.files[0] })}
+/>
+        </div>
+        {isLastMinutePass && (
+          <p className="text-red-600 font-semibold">
+            ⚠ Last Minute Pass: 75% additional fee applies
+          </p>
+        )}
+        <button
+          type="submit"
+          className="w-full bg-teal-600 text-white py-2 rounded-md font-semibold hover:bg-teal-700"
+        >
+          Submit Registration
+        </button>
+      </form>
     </div>
   );
 };

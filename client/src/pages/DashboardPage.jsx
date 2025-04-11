@@ -4,6 +4,7 @@ import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
 import { PlusIcon, CalendarIcon, UsersIcon, CreditCardIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
 
+
 const DashboardPage = () => {
   const { user, token, isAuthenticated } = useContext(AuthContext);
   const [events, setEvents] = useState([]);
@@ -140,9 +141,12 @@ const DashboardPage = () => {
     }
     
     try {
-      await axios.delete(`/api/events/${eventId}`, {
-        headers: { Authorization: `Bearer ${token}` }
+      await axios.delete(`/api/events/${event._id}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       });
+      
       
       // Remove event from state after successful deletion
       setEvents(events.filter(event => event._id !== eventId));
@@ -276,13 +280,8 @@ const DashboardPage = () => {
             <PlusIcon className="h-5 w-5 mr-2" />
             Create New Event
           </Link>
-          <Link
-            to="/brochures/upload"
-            className="inline-flex items-center px-4 py-3 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-          >
-            <DocumentTextIcon className="h-5 w-5 mr-2 text-gray-500" />
-            Upload Event Brochure
-          </Link>
+          
+            
           <Link
             to="/payments"
             className="inline-flex items-center px-4 py-3 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"

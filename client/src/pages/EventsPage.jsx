@@ -23,11 +23,12 @@ const EventsPage = () => {
 
   const fetchEvents = useCallback(async () => {
     try {
-      setLoading(true);
-      const response = await fetch("/api/events");
-      if (!response.ok) {
-        throw new Error("Failed to fetch events");
-      }
+        setLoading(true);
+    
+        const response = await fetch("http://localhost:5000/api/events"); // ✅ correct backend URL
+        if (!response.ok) {
+          throw new Error("Failed to fetch events");
+        }
       const data = await response.json();
       setEvents(data);
 
@@ -298,7 +299,7 @@ const EventsPage = () => {
                 >
                   {filteredEvents.map((event) => (
                     <EventCard
-                      key={event._id}
+                      key={event}
                       event={event}
                       onDelete={handleDeleteEvent}
                     />

@@ -20,6 +20,7 @@ const RegisterPage = () => {
     'Computer Science',
     'Information Technology',
     'Electronics & Communication',
+    'Information Science and Engineering',
     'Electrical Engineering',
     'Mechanical Engineering',
     'Civil Engineering',
@@ -38,37 +39,65 @@ const RegisterPage = () => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
+//   const handleSubmit = async (e) => {
+//     e.preventDefault();
+//     setLoading(true);
+//     setError('');
 
-    // Validate password match
-    if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match');
-      setLoading(false);
-      return;
-    }
+//     // Validate password match
+//     if (formData.password !== formData.confirmPassword) {
+//       setError('Passwords do not match');
+//       setLoading(false);
+//       return;
+//     }
 
-    try {
- // In RegisterPage.jsx, modify the axios.post line:
-const response = await axios.post('http://localhost:5000/api/users/register', {
-    name: formData.name,
-    email: formData.email,
-    password: formData.password,
-    department: formData.department,
-    role: formData.role
-  });
+//     try {
+//  // In RegisterPage.jsx, modify the axios.post line:
+// const response = await axios.post('http://localhost:5000/api/register', {
+//     name: formData.name,
+//     email: formData.email,
+//     password: formData.password,
+//     department: formData.department,
+//     role: formData.role
+//   });
       
-      localStorage.setItem('userToken', response.data.token);
-      localStorage.setItem('userData', JSON.stringify(response.data.user));
-      setLoading(false);
-      navigate('/dashboard');
-    } catch (error) {
-      setLoading(false);
-      setError(error.response?.data?.message || 'Registration failed. Please try again.');
-    }
-  };
+//       localStorage.setItem('userToken', response.data.token);
+//       localStorage.setItem('userData', JSON.stringify(response.data.user));
+//       setLoading(false);
+//       navigate('/dashboard');
+//     } catch (error) {
+//       setLoading(false);
+//       setError(error.response?.data?.message || 'Registration failed. Please try again.');
+//     }
+//   };
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  setLoading(true);
+  setError('');
+
+  if (formData.password !== formData.confirmPassword) {
+    setError('Passwords do not match');
+    setLoading(false);
+    return;
+  }
+
+  try {
+    const response = await axios.post(
+      'http://localhost:5000/api/users', 
+      formData, 
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+
+    localStorage.setItem('userToken', response.data.token);
+    localStorage.setItem('userData', JSON.stringify(response.data.user));
+    setLoading(false);
+    navigate('/dashboard');
+  } catch (error) {
+    setLoading(false);
+    setError(error.response?.data?.message || 'Registration failed. Please try again.');
+  }
+};
+
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">

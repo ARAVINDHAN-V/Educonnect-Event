@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { useNotification } from "../context/NotificationContext";
+import { useLocation } from 'react-router-dom';
 
 const EventRegistrationsPage = () => {
   const { id } = useParams();
@@ -9,20 +11,14 @@ const EventRegistrationsPage = () => {
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortConfig, setSortConfig] = useState({ key: 'registrationDate', direction: 'desc' });
+  const { showNotification } = useNotification();
+  const location = useLocation();
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Get token from localStorage
         const token = localStorage.getItem('userToken');
-        
-        // Log diagnostic information
-        console.log('Fetching event details and registrations', { 
-          eventId: id, 
-          tokenPresent: !!token 
-        });
 
-        // Fetch event details
         const eventResponse = await fetch(`/api/events/${id}`, {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -30,18 +26,14 @@ const EventRegistrationsPage = () => {
           }
         });
 
-        console.log('Event Fetch Response Status:', eventResponse.status);
-
         if (!eventResponse.ok) {
           const errorText = await eventResponse.text();
-          console.error('Event Fetch Error:', errorText);
           throw new Error(errorText || 'Failed to fetch event details');
         }
 
         const eventData = await eventResponse.json();
         setEventData(eventData);
 
-        // Now fetch registrations with the correct URL
         const registrationsResponse = await fetch(`/api/events/${id}/registrations`, {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -49,23 +41,17 @@ const EventRegistrationsPage = () => {
           }
         });
 
-        console.log('Registrations Fetch Response Status:', registrationsResponse.status);
-
         if (!registrationsResponse.ok) {
           const errorText = await registrationsResponse.text();
-          console.error('Registrations Fetch Error:', errorText);
           throw new Error(errorText || 'Failed to fetch registrations');
         }
 
         const registrationsData = await registrationsResponse.json();
         setRegistrations(registrationsData);
-        
+
         setLoading(false);
       } catch (err) {
-        console.error('Complete Fetch Error:', {
-          message: err.message,
-          stack: err.stack
-        });
+        console.error('Fetch Error:', err);
         setError(err.message);
         setLoading(false);
       }
@@ -86,12 +72,8 @@ const EventRegistrationsPage = () => {
     const sortableItems = [...registrations];
     if (sortConfig.key) {
       sortableItems.sort((a, b) => {
-        if (a[sortConfig.key] < b[sortConfig.key]) {
-          return sortConfig.direction === 'asc' ? -1 : 1;
-        }
-        if (a[sortConfig.key] > b[sortConfig.key]) {
-          return sortConfig.direction === 'asc' ? 1 : -1;
-        }
+        if (a[sortConfig.key] < b[sortConfig.key]) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (a[sortConfig.key] > b[sortConfig.key]) return sortConfig.direction === 'asc' ? 1 : -1;
         return 0;
       });
     }
@@ -101,28 +83,24 @@ const EventRegistrationsPage = () => {
   const filteredRegistrations = getSortedRegistrations().filter(reg => {
     const searchTermLower = searchTerm.toLowerCase();
     return (
-      reg.name?.toLowerCase().includes(searchTermLower) ||
-      reg.email?.toLowerCase().includes(searchTermLower) ||
-      reg.ticketType?.toLowerCase().includes(searchTermLower)
+      reg.teamName?.toLowerCase().includes(searchTermLower) ||
+      reg.paperTitle?.toLowerCase().includes(searchTermLower)
     );
   });
 
   const exportToCSV = () => {
-    // Simple CSV export
-    const headers = ['Name', 'Email', 'Registration Date', 'Ticket Type', 'Payment Status'];
+    const headers = ['Team Name', 'Paper Title', 'Abstract', 'Total Fees'];
     const dataRows = registrations.map(reg => [
-      reg.name || '',
-      reg.email || '',
-      new Date(reg.registrationDate).toLocaleDateString() || '',
-      reg.ticketType || '',
-      reg.paymentStatus || ''
+      reg.teamName || '',
+      reg.paperTitle || '',
+      `"${reg.abstract?.replace(/"/g, '""') || ''}"`,
+      reg.totalFees || ''
     ]);
-    
     const csvContent = [
       headers.join(','),
       ...dataRows.map(row => row.join(','))
     ].join('\n');
-    
+
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -134,12 +112,9 @@ const EventRegistrationsPage = () => {
     document.body.removeChild(a);
   };
 
-  // Handle registration deletion
   const handleDeleteRegistration = async (registrationId) => {
-    if (!window.confirm('Are you sure you want to delete this registration?')) {
-      return;
-    }
-    
+    if (!window.confirm('Are you sure you want to delete this registration?')) return;
+
     try {
       const token = localStorage.getItem('userToken');
       const response = await fetch(`/api/events/${id}/registrations/${registrationId}`, {
@@ -149,15 +124,14 @@ const EventRegistrationsPage = () => {
           'Content-Type': 'application/json'
         }
       });
-      
+
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(errorText || 'Failed to delete registration');
       }
-      
-      // Remove the deleted registration from state
+
       setRegistrations(registrations.filter(reg => reg._id !== registrationId));
-      
+      showNotification('Registration deleted successfully.', 'success');
     } catch (err) {
       console.error('Error deleting registration:', err);
       alert('Failed to delete registration: ' + err.message);
@@ -176,6 +150,7 @@ const EventRegistrationsPage = () => {
       <span className="block sm:inline"> {error}</span>
     </div>
   );
+  
 
   return (
     <div className="container mx-auto p-4">
@@ -221,120 +196,103 @@ const EventRegistrationsPage = () => {
 
           <div className="overflow-x-auto">
             <table className="min-w-full bg-white">
-              <thead className="bg-gray-100">
-                <tr>
-                  <th 
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                    onClick={() => sortData('name')}
-                  >
-                    <div className="flex items-center">
-                      Name
-                      {sortConfig.key === 'name' && (
-                        <span className="ml-1">
-                          {sortConfig.direction === 'asc' ? '↑' : '↓'}
-                        </span>
-                      )}
-                    </div>
-                  </th>
-                  <th 
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                    onClick={() => sortData('email')}
-                  >
-                    <div className="flex items-center">
-                      Email
-                      {sortConfig.key === 'email' && (
-                        <span className="ml-1">
-                          {sortConfig.direction === 'asc' ? '↑' : '↓'}
-                        </span>
-                      )}
-                    </div>
-                  </th>
-                  <th 
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                    onClick={() => sortData('registrationDate')}
-                  >
-                    <div className="flex items-center">
-                      Registration Date
-                      {sortConfig.key === 'registrationDate' && (
-                        <span className="ml-1">
-                          {sortConfig.direction === 'asc' ? '↑' : '↓'}
-                        </span>
-                      )}
-                    </div>
-                  </th>
-                  <th 
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                    onClick={() => sortData('ticketType')}
-                  >
-                    <div className="flex items-center">
-                      Ticket Type
-                      {sortConfig.key === 'ticketType' && (
-                        <span className="ml-1">
-                          {sortConfig.direction === 'asc' ? '↑' : '↓'}
-                        </span>
-                      )}
-                    </div>
-                  </th>
-                  <th 
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                    onClick={() => sortData('paymentStatus')}
-                  >
-                    <div className="flex items-center">
-                      Payment Status
-                      {sortConfig.key === 'paymentStatus' && (
-                        <span className="ml-1">
-                          {sortConfig.direction === 'asc' ? '↑' : '↓'}
-                        </span>
-                      )}
-                    </div>
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {filteredRegistrations.length > 0 ? (
-                  filteredRegistrations.map((registration) => (
-                    <tr key={registration._id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {registration.name}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {registration.email}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {new Date(registration.registrationDate).toLocaleDateString()}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {registration.ticketType}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                          ${registration.paymentStatus === 'Paid' ? 'bg-green-100 text-green-800' : 
-                            registration.paymentStatus === 'Cancelled' ? 'bg-red-100 text-red-800' : 
-                            'bg-yellow-100 text-yellow-800'}`}>
-                          {registration.paymentStatus}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <button
-                          onClick={() => handleDeleteRegistration(registration._id)}
-                          className="text-red-600 hover:text-red-900"
-                        >
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan="6" className="px-6 py-4 text-center text-gray-500">
-                      {searchTerm ? 'No registrations match your search.' : 'No registrations found for this event.'}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
+            <thead className="bg-gray-100">
+  <tr>
+    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+      Team Name
+    </th>
+    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+      Paper Title
+    </th>
+    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+      Team Members
+    </th>
+    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+      Abstract
+    </th>
+    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+      Payment Proof
+    </th>
+    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+      Total Fees
+    </th>
+    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+      Type
+    </th>
+    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+      Actions
+    </th>
+  </tr>
+</thead>
+
+
+<tbody className="divide-y divide-gray-200">
+  {filteredRegistrations.length > 0 ? (
+    filteredRegistrations.map((registration) => (
+      <tr key={registration._id} className="hover:bg-gray-50">
+        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+          {registration.teamName || 'N/A'}
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+          {registration.paperTitle}
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+          <div className="space-y-1">
+            {registration.teamMembers?.map((member, idx) => (
+              <div key={idx} className="text-sm text-gray-600">
+                <p><strong>Member {idx + 1}</strong>: {member.name}</p>
+                <p className="ml-2 text-sm">
+                  {member.college}, {member.studies}, {member.department}<br />
+                  {member.email}, {member.phone}
+                </p>
+              </div>
+            ))}
+          </div>
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+          {registration.abstract.length > 100
+            ? registration.abstract.substring(0, 100) + '...'
+            : registration.abstract}
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+          {registration.paymentProof ? (
+            <img
+              src={`http://localhost:5000/${registration.paymentProof}`}
+              alt="Payment Proof"
+              className="w-24 rounded-md border border-gray-300"
+            />
+          ) : (
+            <span className="text-gray-400 italic">Not uploaded</span>
+          )}
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap text-sm">
+          ₹{registration.totalFees}
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap text-sm">
+          {registration.lastMinutePass ? (
+            <span className="text-orange-600 font-semibold">Last Minute</span>
+          ) : (
+            <span className="text-green-600">Normal</span>
+          )}
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+          <button
+            onClick={() => handleDeleteRegistration(registration._id)}
+            className="text-red-600 hover:text-red-900"
+          >
+            Delete
+          </button>
+        </td>
+      </tr>
+    ))
+  ) : (
+    <tr>
+      <td colSpan="8" className="px-6 py-4 text-center text-gray-500">
+        {searchTerm ? 'No registrations match your search.' : 'No registrations found for this event.'}
+      </td>
+    </tr>
+  )}
+</tbody>
             </table>
           </div>
           

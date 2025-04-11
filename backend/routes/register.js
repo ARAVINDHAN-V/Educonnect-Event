@@ -3,15 +3,25 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+console.log(User); 
 
-// @route   POST /api/users/register
-// @desc    Register a new user
-// @access  Public
+
 router.post('/', async (req, res) => {
   try {
     const { name, email, password, department, role } = req.body;
 
-    // Check if user with this email already exists
+    // Check if all fields are provided
+    if (!name || !email || !password || !department) {
+      return res.status(400).json({ message: 'All fields are required' });
+    }
+
+    // Validate role
+    const allowedRoles = ['coordinator', 'admin', 'student'];
+    if (!allowedRoles.includes(role)) {
+      return res.status(400).json({ message: 'Invalid role' });
+    }
+
+    // Check if user already exists
     let user = await User.findOne({ email });
     if (user) {
       return res.status(400).json({ message: 'User with this email already exists' });
@@ -23,7 +33,7 @@ router.post('/', async (req, res) => {
       email,
       password,
       department,
-      role: role || 'coordinator' // default to 'coordinator' if not specified
+      role: role || 'coordinator' // Default role
     });
 
     // Hash password
@@ -47,7 +57,7 @@ router.post('/', async (req, res) => {
       { expiresIn: '7d' },
       (err, token) => {
         if (err) throw err;
-        res.status(201).json({ 
+        res.status(201).json({
           token,
           user: {
             id: user.id,

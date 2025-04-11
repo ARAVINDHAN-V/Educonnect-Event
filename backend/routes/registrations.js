@@ -1,131 +1,126 @@
-// routes/registrations.js
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
-const auth = require('../middleware/auth');
+const multer = require('multer');
+const path = require('path');
+const { protect } = require('../middleware/authMiddleware');
 const Event = require('../models/Event');
-const Registration = require('../models/Registration');
-const User = require('../models/User');
+const Registration = require('../models/Registration'); 
+const upload = require('../middleware/uploadMiddleware');
 
-// @route   POST /api/events/:eventId/registrations
-// @desc    Register for an event
-// @access  Private
-router.post('/events/:eventId/registrations', auth, async (req, res) => {
 
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/paymentProofs/');
+  },
+  filename: (req, file, cb) => {
+    const uniqueName = `${Date.now()}-${Math.floor(Math.random() * 1000)}${path.extname(file.originalname)}`;
+    cb(null, uniqueName);
+  },
+});
+
+router.post('/events/:eventId/registrations', protect, upload.single('paymentProof'), async (req, res) => {
   try {
     const eventId = req.params.eventId;
     if (!mongoose.Types.ObjectId.isValid(eventId)) {
       return res.status(400).json({ message: 'Invalid event ID' });
     }
-    const event = await Event.findById(eventId);
-    
-    
-    if (!event) {
-      return res.status(404).json({ message: 'Event not found' });
-    }
 
-    // Check if event has already occurred
+    const event = await Event.findById(eventId);
+    if (!event) return res.status(404).json({ message: 'Event not found' });
+
     if (new Date(event.date) < new Date()) {
       return res.status(400).json({ message: 'Cannot register for a past event' });
     }
-    
-    // Check if user is already registered
-    const existingRegistration = await Registration.findOne({
-      eventId: req.params.eventId,
-      userId: req.user.id
-    });
-    
-    if (existingRegistration) {
-      return res.status(400).json({ message: 'Already registered for this event' });
-    }
-    
-    const { 
-      ticketType = 'Standard', 
-      paymentStatus = 'Pending',
-      specialRequirements = '',
-      dietary = ''
+
+    const {
+      teamName,
+      teamMemberCount, // keep raw string
+      paperTitle,
+      abstract,
+      isLastMinutePass,
+      totalFees
     } = req.body;
-    
-    // Get user details
-    const user = await User.findById(req.user.id).select('-password');
-    
-    const newRegistration = new Registration({
-      eventId: req.params.eventId,
-      userId: req.user.id,
-      name: user.name,
-      email: user.email,
-      department: user.department || 'Not specified',
-      ticketType,
-      paymentStatus,
-      specialRequirements,
-      dietary
-    });
-    
-    const registration = await newRegistration.save();
-    
-    // Return registration with event details
-    const registrationWithEvent = {
-      ...registration._doc,
-      event: {
-        title: event.title,
-        date: event.date,
-        time: event.time,
-        location: event.location
+
+    if (!teamName || !teamMemberCount || !paperTitle || !abstract) {
+      return res.status(400).json({ message: 'All fields are required' });
+    }
+
+    const parsedTeamMemberCount = parseInt(teamMemberCount, 10);
+
+    // Check duplicate team name for this event
+    const existing = await Registration.findOne({ eventId, teamName });
+    if (existing) {
+      return res.status(400).json({ message: 'This team is already registered' });
+    }
+
+    // Handle team members parsing
+    let teamMembers = [];
+    try {
+      let rawMembers = req.body.members;
+      if (Array.isArray(rawMembers)) {
+        rawMembers = rawMembers[0]; // Handle FormData arrays
       }
-    };
-    
-    res.status(201).json(registrationWithEvent);
+
+      console.log('📦 Raw members:', rawMembers);
+      teamMembers = JSON.parse(rawMembers);
+      console.log('✅ Parsed team members:', teamMembers);
+    } catch (err) {
+      console.error('❌ JSON parse error:', err.message);
+      return res.status(400).json({ message: 'Invalid team members data' });
+    }
+
+    // Validation
+    if (teamMembers.length < 2) {
+      return res.status(400).json({ message: 'Minimum 2 team members required' });
+    }
+    if (parsedTeamMemberCount !== teamMembers.length) {
+      return res.status(400).json({ message: 'Team member count mismatch' });
+    }
+
+    // Count existing registrations
+    const currentCount = await Registration.countDocuments({ eventId });
+    const maxLimit = event.maxRegistrations || 50;
+
+    if (currentCount >= maxLimit && isLastMinutePass !== 'true') {
+      return res.status(400).json({ message: 'Max registrations reached. Use Last Minute Pass to continue.' });
+    }
+
+    // Handle payment proof path
+    const paymentProofPath = req.file ? req.file.path.replace(/\\/g, "/") : '';
+
+    // Final fees calculation
+    const finalFees = totalFees || (isLastMinutePass === 'true'
+      ? Math.round(event.price * 1.75)
+      : event.price);
+
+      const registration = new Registration({
+        event: eventId,
+        userId: req.user._id,
+        teamName: req.body.teamName?.trim(),
+        teamMembers,
+        teamMemberCount: teamMembers.length, // ✅ important!
+        paperTitle: req.body.paperTitle?.trim(),
+        abstract: req.body.abstract?.trim(),
+        paymentProof: req.file ? `/uploads/${req.file.filename}` : null, // ✅ must not be empty
+        totalFees: req.body.totalFees || 0 // ✅ this must be provided from frontend
+      });
+      
+
+    const saved = await registration.save();
+
+    console.log('✅ Registration Saved:', saved);
+
+    res.status(201).json(saved);
   } catch (err) {
-    console.error('Error registering for event:', err.message);
-    res.status(500).json({ message: 'Server error registering for event' });
+    console.error('❌ Registration error:', err);
+    res.status(500).json({ message: 'Server error during registration' });
   }
 });
-
-// @route   GET /api/events/:eventId/registrations
-// @desc    Get all registrations for a specific event
-// @access  Private (only for event creators or admins)
-router.get('/events/:eventId/registrations', auth, async (req, res) => {
-  try {
-    // Validate event ID
-    if (!mongoose.Types.ObjectId.isValid(req.params.eventId)) {
-      return res.status(400).json({ message: 'Invalid event ID' });
-    }
-
-    // First, verify the event exists and the user has permission to view its registrations
-    const event = await Event.findById(req.params.eventId);
-    
-    if (!event) {
-      return res.status(404).json({ message: 'Event not found' });
-    }
-    
-    // Check if the user is the event creator or an admin
-    if (event.createdBy.toString() !== req.user.id && req.user.role !== 'admin') {
-      return res.status(403).json({ message: 'Not authorized to view registrations' });
-    }
-    
-    // Fetch registrations for this event
-    const registrations = await Registration.find({ eventId: req.params.eventId })
-      .sort({ registrationDate: -1 });
-    
-    res.json(registrations);
-  } catch (err) {
-    console.error('Error fetching event registrations:', err.message);
-    if (err.kind === 'ObjectId') {
-      return res.status(404).json({ message: 'Event not found' });
-    }
-    res.status(500).json({ message: 'Server error fetching registrations' });
-  }
-});
-
-// @route   GET /api/users/me/registrations
-// @desc    Get all registrations for the logged-in user
-// @access  Private
-router.get('/users/registrations', auth, async (req, res) => {
+router.get('/users/registrations', protect, async (req, res) => {
   try {
     const registrations = await Registration.find({ userId: req.user.id })
       .sort({ registrationDate: -1 });
-      
-    // Fetch event details for each registration
     const registrationsWithEventDetails = await Promise.all(
       registrations.map(async (registration) => {
         const event = await Event.findById(registration.eventId)
@@ -152,10 +147,7 @@ router.get('/users/registrations', auth, async (req, res) => {
   }
 });
 
-// @route   GET /api/users/me/registrations/:eventId
-// @desc    Get a specific registration for the logged-in user
-// @access  Private
-router.get('/users/registrations/:eventId', auth, async (req, res) => {
+router.get('/users/registrations/:eventId', protect, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.eventId)) {
       return res.status(400).json({ message: 'Invalid event ID' });
@@ -177,10 +169,33 @@ router.get('/users/registrations/:eventId', auth, async (req, res) => {
   }
 });
 
-// @route   PUT /api/users/me/registrations/:eventId
-// @desc    Update a user's registration
-// @access  Private
-router.put('/users/registrations/:eventId', auth, async (req, res) => {
+// @route   GET /api/events/:id
+// @desc    Get single event by ID
+// @access  Public
+// Get single event by ID
+router.get('/events/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid event ID' });
+    }
+
+    const event = await Event.findById(id);
+    if (!event) {
+      return res.status(404).json({ message: 'Event not found' });
+    }
+
+    res.json(event);
+  } catch (err) {
+    console.error('❌ Error fetching event by ID:', err.message);
+    res.status(500).json({ message: 'Server error while fetching event' });
+  }
+});
+
+
+
+router.put('/users/registrations/:eventId', protect, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.eventId)) {
       return res.status(400).json({ message: 'Invalid event ID' });
@@ -219,7 +234,7 @@ router.put('/users/registrations/:eventId', auth, async (req, res) => {
 // @route   DELETE /api/users/me/registrations/:eventId
 // @desc    Cancel a user's registration
 // @access  Private
-router.delete('/users/registrations/:eventId', auth, async (req, res) => {
+router.delete('/users/registrations/:eventId', protect, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.eventId)) {
       return res.status(400).json({ message: 'Invalid event ID' });
@@ -254,7 +269,7 @@ router.delete('/users/registrations/:eventId', auth, async (req, res) => {
 // @route   DELETE /api/events/:eventId/registrations/:registrationId
 // @desc    Delete a specific registration (admin only)
 // @access  Private (only for event creators or admins)
-router.delete('/events/:eventId/registrations/:registrationId', auth, async (req, res) => {
+router.delete('/events/:eventId/registrations/:registrationId', protect, async (req, res) => {
   try {
     // Validate IDs
     if (!mongoose.Types.ObjectId.isValid(req.params.eventId) || 

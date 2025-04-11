@@ -2,24 +2,30 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
+import EventCard from '../components/EventCard'; // adjust the path if needed
+
 
 const HomePage = () => {
   const [upcomingEvents, setUpcomingEvents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [events, setEvents] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     const fetchUpcomingEvents = async () => {
       try {
         setLoading(true);
-        const response = await axios.get('/api/events');
-        
-        // Filter for upcoming events and sort by date
+        const res = await axios.get('http://localhost:5000/api/events');
+        const data = res.data;
+        setEvents(data);
+  
+        // ✅ Correct filtering and sorting using `data`
         const currentDate = new Date();
-        const upcoming = response.data
+        const upcoming = data
           .filter(event => new Date(event.date) >= currentDate)
           .sort((a, b) => new Date(a.date) - new Date(b.date))
-          .slice(0, 4); // Get only the first 4 upcoming events
-        
+          .slice(0, 4);
+  
         setUpcomingEvents(upcoming);
       } catch (error) {
         console.error('Error fetching upcoming events:', error);
@@ -27,9 +33,14 @@ const HomePage = () => {
         setLoading(false);
       }
     };
-
+  
     fetchUpcomingEvents();
   }, []);
+  
+
+  const filteredEvents = events?.filter((event) =>
+    event.title.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -82,17 +93,23 @@ const HomePage = () => {
             {upcomingEvents.map((event) => (
               <div key={event._id} className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-xl transition-shadow transform hover:-translate-y-1 duration-300">
                 <div className="h-48 bg-gradient-to-r from-indigo-500 to-purple-600 relative">
-                  {event.imageUrl ? (
-                    <img 
-                      src={event.imageUrl} 
-                      alt={event.title} 
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <span className="text-white text-3xl font-bold">{event.title.substring(0, 2).toUpperCase()}</span>
-                    </div>
-                  )}
+                {event.imageUrl ? (
+  <img
+    src={
+      event.imageUrl?.startsWith('http') || event.imageUrl?.startsWith('https')
+        ? event.imageUrl
+        : `http://localhost:5000${event.imageUrl}`
+    }
+    alt={event.title}
+    className="w-full h-full object-cover"
+  />
+) : (
+  <div className="w-full h-full flex items-center justify-center">
+    <span className="text-white text-3xl font-bold">{event.title.substring(0, 2).toUpperCase()}</span>
+  </div>
+)}
+
+
                   <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-4">
                     <div className="text-white text-sm font-medium">
                       {new Date(event.date).toLocaleDateString('en-US', {
@@ -179,6 +196,27 @@ const HomePage = () => {
           </div>
         </div>
       </div>
+
+      {/* <div className="container mx-auto px-4 py-8">
+      <input
+        type="text"
+        placeholder="Search events..."
+        value={searchTerm}
+        onChange={(e) => setSearchTerm(e.target.value)}
+        className="mb-4 p-2 border border-gray-300 rounded w-full"
+      />
+
+      {filteredEvents?.length > 0 ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+          {filteredEvents.map((event) => (
+            <EventCard key={event._id} event={event} />
+          ))}
+        </div>
+      ) : (
+        <p>No events found.</p>
+      )}
+    </div> */}
+
 
       {/* CTA Banner */}
       <div className="bg-gradient-to-r from-indigo-600 to-purple-600 mt-8">

@@ -1,10 +1,24 @@
-import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ChatBubbleLeftRightIcon, CalendarIcon, MapPinIcon, CurrencyDollarIcon, DocumentIcon, XMarkIcon, PaperAirplaneIcon, ArrowLeftIcon, PencilIcon, TrashIcon, UserGroupIcon } from '@heroicons/react/24/outline';
+import React, { useState, useEffect, useRef, useContext } from 'react';
+import { AuthContext } from '../context/AuthContext';
+import {
+  ChatBubbleLeftRightIcon,
+  CalendarIcon,
+  MapPinIcon,
+  CurrencyDollarIcon,
+  DocumentIcon,
+  XMarkIcon,
+  PaperAirplaneIcon,
+  ArrowLeftIcon,
+  PencilIcon,
+  TrashIcon,
+  UserGroupIcon
+} from '@heroicons/react/24/outline';
 
 const EventDetailPage = () => {
-  const { id } = useParams();
+  const { id } = useParams(); // ✅ Correct usage only
   const navigate = useNavigate();
+  const { token, user } = useContext(AuthContext);
   const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -17,52 +31,49 @@ const EventDetailPage = () => {
   const chatContainerRef = useRef(null);
 
   useEffect(() => {
-    const fetchEventDetails = async () => {
+    const fetchEvent = async () => {
       try {
-        // Replace with your actual API endpoint
-        const response = await fetch(`/api/events/${id}`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch event details');
-        }
-        const data = await response.json();
+        const res = await fetch(`/api/events/${id}`);
+        console.log("Fetching event with ID:", id);
+        if (!res.ok) throw new Error("Failed to fetch event details");
+        const data = await res.json();
         setEvent(data);
-        setLoading(false);
       } catch (err) {
-        setError(err.message);
+        console.error(err);
+        setError("Failed to fetch event details");
+      } finally {
         setLoading(false);
       }
     };
-
-    fetchEventDetails();
+    fetchEvent();
   }, [id]);
 
   useEffect(() => {
-    // Scroll to bottom of chat when new messages are added
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
   }, [chatMessages]);
 
   const handleDelete = async () => {
-    if (!window.confirm('Are you sure you want to delete this event?')) {
-      return;
-    }
-
+    if (!window.confirm("Are you sure you want to delete this event?")) return;
     try {
-      const response = await fetch(`/api/events/${id}`, {
-        method: 'DELETE',
+      const res = await fetch(`/api/events/${id}`, {
+        method: "DELETE",
         headers: {
-          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
         },
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to delete event');
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.message || "Failed to delete event");
       }
 
-      navigate('/events');
+      alert("Event deleted successfully!");
+      navigate("/events");
     } catch (err) {
-      setError(err.message);
+      console.error("Delete Error:", err.message);
+      alert(err.message);
     }
   };
 
@@ -89,7 +100,7 @@ const EventDetailPage = () => {
           botResponse = `The event will be held at ${event.location || 'a location that is not yet specified'}.`;
         } else if (lowerCaseInput.includes('price') || lowerCaseInput.includes('cost') || lowerCaseInput.includes('how much')) {
           botResponse = event.price !== undefined 
-            ? `The event costs $${event.price.toFixed(2)} per person.` 
+            ? `The event costs ₹${event.price.toFixed(2)} per person.` 
             : 'Price information is not available for this event.';
         } else if (lowerCaseInput.includes('register') || lowerCaseInput.includes('sign up') || lowerCaseInput.includes('join')) {
           botResponse = 'You can register for this event by clicking the "Register Now" button at the bottom of this page.';
@@ -156,6 +167,7 @@ const EventDetailPage = () => {
     month: 'long',
     day: 'numeric'
   });
+  console.log("Final imageUrl is:", event.imageUrl);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-teal-50 via-white to-gray-50">
@@ -167,28 +179,42 @@ const EventDetailPage = () => {
             Back to Events
           </Link>
         </div>
+         
+        {(event.imageFile || event.imageUrl) ? (
+  <div className="relative h-64 sm:h-80 md:h-96 overflow-hidden rounded-2xl shadow-md mb-6">
+    <img 
+      src={
+        event.imageFile
+          ? `/uploads/${event.imageFile}`
+          : event.imageUrl.startsWith('http') || event.imageUrl.startsWith('https')
+          ? event.imageUrl
+          : `http://localhost:5000${event.imageUrl}`
+      }
+      alt={event.title}
+      className="w-full h-full object-cover transition-transform duration-700 hover:scale-105"
+    />
+    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/40 to-black/10"></div>
+    <div className="absolute bottom-0 left-0 p-6 text-white w-full">
+      <div className="max-w-3xl">
+        <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-2 drop-shadow-lg">
+          {event.title}
+        </h1>
+        <p className="text-white/80 text-lg md:text-xl max-w-2xl">
+          {formattedDate} {event.time && `• ${event.time}`}
+        </p>
+      </div>
+    </div>
+  </div>
+) : (
+  <div className="relative h-64 sm:h-80 md:h-96 bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center">
+    <h3 className="text-white text-2xl sm:text-3xl md:text-4xl font-bold px-6 text-center">
+      {event.title}
+    </h3>
+  </div>
+)}
 
-        {/* Event Card with improved design */}
-        <div className="bg-white rounded-2xl shadow-lg overflow-hidden transition-all duration-300 hover:shadow-xl mx-auto max-w-6xl">
-          {/* Hero Image with overlay gradient */}
-          {event.imageUrl && (
-            <div className="relative h-64 sm:h-80 md:h-96 overflow-hidden">
-              <img 
-                src={event.imageUrl} 
-                alt={event.title} 
-                className="w-full h-full object-cover transition-transform duration-700 hover:scale-105"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/40 to-black/10"></div>
-              <div className="absolute bottom-0 left-0 p-6 text-white w-full">
-                <div className="max-w-3xl">
-                  <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-2 drop-shadow-lg">{event.title}</h1>
-                  <p className="text-white/80 text-lg md:text-xl max-w-2xl">
-                    {formattedDate} {event.time && `• ${event.time}`}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
+
+
 
           {/* If no image, display a colored header instead */}
           {!event.imageUrl && (
@@ -202,6 +228,8 @@ const EventDetailPage = () => {
             </div>
           )}
           
+          
+
           <div className="p-6 sm:p-8 md:p-10">
             {/* Action buttons with improved design */}
             <div className="flex flex-wrap justify-end gap-3 mb-8">
@@ -212,13 +240,16 @@ const EventDetailPage = () => {
                 <PencilIcon className="w-4 h-4 mr-2" />
                 Edit
               </Link>
-              <button 
-                onClick={handleDelete} 
+
+              {event?.createdBy?.toString() === user?._id?.toString() && (
+                <button
+                onClick={handleDelete}
                 className="flex items-center bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg shadow-sm transition duration-200"
-              >
-                <TrashIcon className="w-4 h-4 mr-2" />
-                Delete
-              </button>
+               >
+                <TrashIcon className="w-4 h-4 mr-2" />Delete</button>
+            )}
+
+
               <Link 
                 to={`/events/${id}/registrations`} 
                 className="flex items-center bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg shadow-sm transition duration-200"
@@ -262,7 +293,7 @@ const EventDetailPage = () => {
                     </div>
                     <div>
                       <h3 className="text-gray-500 text-sm font-medium">Price</h3>
-                      <p className="text-gray-800 font-medium">${event.price.toFixed(2)}</p>
+                      <p className="text-gray-800 font-medium">₹{event.price.toFixed(2)}</p>
                     </div>
                   </div>
                 )}
@@ -384,8 +415,8 @@ const EventDetailPage = () => {
           </div>
         )}
       </div>
-    </div>
   );
 };
 
 export default EventDetailPage;
+

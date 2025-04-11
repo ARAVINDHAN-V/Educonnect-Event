@@ -1,6 +1,10 @@
-import { createContext, useState, useEffect } from "react";
+import { createContext, useContext, useState, useEffect } from 'react';
 
 export const AuthContext = createContext();
+
+export const useAuth = () => {
+  return useContext(AuthContext);
+};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -10,7 +14,7 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const storedUser = localStorage.getItem("userData");
-    const storedToken = localStorage.getItem("userToken"); // Changed from 'token'
+    const storedToken = localStorage.getItem("userToken");
 
     if (storedUser && storedToken) {
       try {
@@ -18,8 +22,8 @@ export const AuthProvider = ({ children }) => {
         setUser(parsedUser);
         setToken(storedToken);
         setIsAuthenticated(true);
-      } catch (error) {
-        console.error("Error parsing stored user data:", error);
+      } catch (err) {
+        console.error("Error parsing stored user data:", err);
         localStorage.removeItem("userData");
         localStorage.removeItem("userToken");
       }
@@ -28,32 +32,29 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = (userData) => {
-    console.log("Login Data:", userData);
-    
-    const userToken = userData.token;
-    const userDetails = userData.user;
-    
-    if (!userToken) {
-      console.error("No valid token found");
+    if (!userData || !userData.token || !userData.user) {
+      console.error("Invalid user data received during login.");
       return;
     }
-  
+
+    const { token: userToken, user: userDetails } = userData;
+
     const userObject = {
-      id: userDetails.id,
+      id: userDetails._id,  // Ensure it matches backend response
       name: userDetails.name,
       email: userDetails.email,
-      department: userDetails.department,
-      role: userDetails.role
+      department: userDetails.department || "Not specified",
+      role: userDetails.role || "User",
     };
-    
+
     setUser(userObject);
-    setIsAuthenticated(true);
     setToken(userToken);
-  
+    setIsAuthenticated(true);
+
     localStorage.setItem("userData", JSON.stringify(userObject));
     localStorage.setItem("userToken", userToken);
   };
-  
+
   const logout = () => {
     setUser(null);
     setToken(null);
@@ -63,14 +64,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      isAuthenticated, 
-      isLoading, 
-      login, 
-      logout, 
-      token 
-    }}>
+    <AuthContext.Provider value={{ user, token, isAuthenticated, isLoading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

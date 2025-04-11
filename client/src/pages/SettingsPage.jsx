@@ -1,7 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
+import { AuthContext } from '../context/AuthContext'; // Import AuthContext
 import { Link } from 'react-router-dom';
 
 const SettingsPage = () => {
+  const { user } = useContext(AuthContext); // ✅ Get the authenticated user from AuthContext
+
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -14,7 +17,7 @@ const SettingsPage = () => {
     emailNotifications: true,
     pushNotifications: false
   });
-  
+
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -23,41 +26,28 @@ const SettingsPage = () => {
   const [avatarPreview, setAvatarPreview] = useState('');
 
   useEffect(() => {
-    // Fetch user data
     const fetchUserData = async () => {
       try {
-        // Replace with your actual API call
-        // const response = await fetch('/api/user/settings', {
-        //   headers: {
-        //     'Authorization': `Bearer ${localStorage.getItem('userToken')}`
-        //   }
-        // });
-        
-        // if (!response.ok) throw new Error('Failed to fetch user data');
-        // const data = await response.json();
-        
-        // Simulating API response for development
-        const data = {
-          name: 'Kapil',
-          email: 'kapil.ag22@bitsathy.ac.in',
-          organization: 'Agri',
-          bio: 'Graduate student interested in AI and machine learning. Event organizer for tech meetups.',
-          avatarUrl: 'https://via.placeholder.com/150',
-          emailNotifications: true,
-          pushNotifications: false
-        };
-        
-        setFormData({
-          ...formData,
-          name: data.name,
-          email: data.email,
-          organization: data.organization,
-          bio: data.bio,
-          emailNotifications: data.emailNotifications,
-          pushNotifications: data.pushNotifications
+        const response = await fetch('/api/user/profile', {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${user?.token || localStorage.getItem('token')}`,
+          },
         });
-        
-        setAvatarPreview(data.avatarUrl);
+
+        if (!response.ok) throw new Error('Failed to fetch user data');
+        const data = await response.json();
+
+        setFormData({
+          name: data.name || '',
+          email: data.email || '',
+          organization: data.organization || '',
+          bio: data.bio || '',
+          emailNotifications: data.emailNotifications || true,
+          pushNotifications: data.pushNotifications || false
+        });
+
+        setAvatarPreview(data.avatarUrl || '');
         setIsLoading(false);
       } catch (err) {
         setError(err.message);
@@ -66,7 +56,7 @@ const SettingsPage = () => {
     };
 
     fetchUserData();
-  }, []);
+  }, [user]);
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -83,8 +73,7 @@ const SettingsPage = () => {
         ...formData,
         avatar: file
       });
-      
-      // Create a preview
+
       const reader = new FileReader();
       reader.onloadend = () => {
         setAvatarPreview(reader.result);
@@ -98,70 +87,67 @@ const SettingsPage = () => {
     setIsSaving(true);
     setError(null);
     setSuccessMessage('');
-    
+
     try {
-      // Replace with your actual API call
-      // const formDataToSend = new FormData();
-      // formDataToSend.append('name', formData.name);
-      // formDataToSend.append('email', formData.email);
-      // formDataToSend.append('organization', formData.organization);
-      // formDataToSend.append('bio', formData.bio);
-      // if (formData.avatar) {
-      //   formDataToSend.append('avatar', formData.avatar);
-      // }
-      
-      // const response = await fetch('/api/user/profile', {
-      //   method: 'PUT',
-      //   headers: {
-      //     'Authorization': `Bearer ${localStorage.getItem('userToken')}`
-      //   },
-      //   body: formDataToSend
-      // });
-      
-      // if (!response.ok) throw new Error('Failed to update profile');
-      
-      // Simulating API response for development
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
+      const formDataToSend = new FormData();
+      formDataToSend.append('name', formData.name);
+      formDataToSend.append('email', formData.email);
+      formDataToSend.append('organization', formData.organization);
+      formDataToSend.append('bio', formData.bio);
+      if (formData.avatar) {
+        formDataToSend.append('avatar', formData.avatar);
+      }
+
+      const response = await fetch('/api/user/profile', {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+        },
+        body: formDataToSend
+      });
+
+      if (!response.ok) throw new Error('Failed to update profile');
+
       setSuccessMessage('Profile updated successfully!');
-      setIsSaving(false);
     } catch (err) {
       setError(err.message);
+    } finally {
       setIsSaving(false);
     }
   };
 
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();
-    
+
+    if (!formData.currentPassword) {
+      setError('Current password is required.');
+      return;
+    }
+
     if (formData.newPassword !== formData.confirmPassword) {
       setError('New passwords do not match');
       return;
     }
-    
+
     setIsSaving(true);
     setError(null);
     setSuccessMessage('');
-    
+
     try {
-      // Replace with your actual API call
-      // const response = await fetch('/api/user/password', {
-      //   method: 'PUT',
-      //   headers: {
-      //     'Authorization': `Bearer ${localStorage.getItem('userToken')}`,
-      //     'Content-Type': 'application/json'
-      //   },
-      //   body: JSON.stringify({
-      //     currentPassword: formData.currentPassword,
-      //     newPassword: formData.newPassword
-      //   })
-      // });
-      
-      // if (!response.ok) throw new Error('Failed to update password');
-      
-      // Simulating API response for development
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
+      const response = await fetch('/api/user/password', {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          currentPassword: formData.currentPassword,
+          newPassword: formData.newPassword
+        })
+      });
+
+      if (!response.ok) throw new Error('Failed to update password');
+
       setSuccessMessage('Password updated successfully!');
       setFormData({
         ...formData,
@@ -169,42 +155,9 @@ const SettingsPage = () => {
         newPassword: '',
         confirmPassword: ''
       });
-      setIsSaving(false);
     } catch (err) {
       setError(err.message);
-      setIsSaving(false);
-    }
-  };
-
-  const handleNotificationsSubmit = async (e) => {
-    e.preventDefault();
-    setIsSaving(true);
-    setError(null);
-    setSuccessMessage('');
-    
-    try {
-      // Replace with your actual API call
-      // const response = await fetch('/api/user/notifications', {
-      //   method: 'PUT',
-      //   headers: {
-      //     'Authorization': `Bearer ${localStorage.getItem('userToken')}`,
-      //     'Content-Type': 'application/json'
-      //   },
-      //   body: JSON.stringify({
-      //     emailNotifications: formData.emailNotifications,
-      //     pushNotifications: formData.pushNotifications
-      //   })
-      // });
-      
-      // if (!response.ok) throw new Error('Failed to update notification settings');
-      
-      // Simulating API response for development
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      setSuccessMessage('Notification settings updated successfully!');
-      setIsSaving(false);
-    } catch (err) {
-      setError(err.message);
+    } finally {
       setIsSaving(false);
     }
   };
@@ -302,7 +255,7 @@ const SettingsPage = () => {
                     <div className="mt-2 flex items-center space-x-5">
                       <div className="flex-shrink-0">
                         <img 
-                          src={avatarPreview || 'https://via.placeholder.com/150'} 
+                          src={avatarPreview || 'client\src\assets\dp.png'} 
                           alt="Profile" 
                           className="h-16 w-16 rounded-full object-cover"
                         />

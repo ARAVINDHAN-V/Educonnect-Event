@@ -11,29 +11,25 @@ router.post('/', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Input validation
     if (!email || !password) {
       return res.status(400).json({ message: 'Please provide email and password' });
     }
 
-    // Check if user exists
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
-    // Verify password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
-    // Create JWT payload
     const payload = {
       user: {
         id: user.id,
-        role: user.role
-      }
+        role: user.role,
+      },
     };
 
     // Generate token
@@ -43,27 +39,25 @@ router.post('/', async (req, res) => {
       { expiresIn: '7d' },
       (err, token) => {
         if (err) {
-          // Use minimal logging in production
           console.error('Token generation error');
           return res.status(500).json({ message: 'Error generating authentication token' });
         }
-        
-        // Return user info without sensitive data
-        res.json({ 
-          token,
+
+        // ✅ Return user info with generated token
+        res.json({
           user: {
-            id: user.id,
+            _id: user._id,
             name: user.name,
             email: user.email,
             department: user.department,
-            role: user.role
-          }
+            role: user.role,
+          },
+          token, // ✅ send token from jwt.sign()
         });
       }
     );
   } catch (err) {
-    // Generic error response for security
-    console.error('Login error');
+    console.error('Login error:', err);
     res.status(500).json({ message: 'Server error during login' });
   }
 });
